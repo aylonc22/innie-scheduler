@@ -1,0 +1,9 @@
+{
+    "innies": [
+        { "id": "HELLY", "schedule": "LOAD 10\nMODULO 3\nWAFFLE" },
+        {
+        "id": "MARK",
+        "schedule": "LOAD 100\nWELLNESS_CHECK HELLY == 1\nWAFFLE"
+        }
+    ]
+}

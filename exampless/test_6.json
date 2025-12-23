@@ -1,0 +1,16 @@
+{
+    "innies": [
+        {
+        "id": "SLOW_JOE",
+        "schedule": "LOAD 100\nSHIFT 10 TIMES\nADD 1\nEND_SHIFT\nWAFFLE"
+        },
+        {
+        "id": "FAST_HELLY",
+        "schedule": "LOAD 1\nWAFFLE"
+        },
+        {
+        "id": "IRVING",
+        "schedule": "LOAD 0\nCONDITIONAL_ADD [FAST_HELLY] IF FAST_HELLY > ANY OF [SLOW_JOE, FAST_HELLY]\nWAFFLE"
+        }
+    ]
+}

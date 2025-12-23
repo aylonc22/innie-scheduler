@@ -1,0 +1,9 @@
+{
+    "innies": [
+        { "id": "HELLY", "schedule": "LOAD 10\nWAFFLE" },
+        { "id": "MARK", "schedule": "LOAD 10\nADD HELLY\nWAFFLE" },
+        { "id": "IRVING", "schedule": "LOAD 10\nADD MARK\nWAFFLE" },
+        { "id": "BURT", "schedule": "LOAD 10\nADD IRVING\nWAFFLE" },
+        { "id": "Aylon", "schedule": "LOAD 10\nADD BURT\nWAFFLE" }
+    ]
+}

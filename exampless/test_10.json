@@ -1,0 +1,10 @@
+{
+    "innies": [
+        { "id": "HELLY", "schedule": "LOAD 1\nADD PETEY\nWAFFLE" },
+        { "id": "PETEY", "schedule": "LOAD 1\nADD HELLY\nWAFFLE" },
+        {
+        "id": "MARK",
+        "schedule": "LOAD 5\nCONDITIONAL_ADD [HELLY] IF 5 > 10\nWAFFLE"
+        }
+    ]
+}
