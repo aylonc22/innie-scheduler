@@ -1,0 +1,27 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+        "type": "shell",
+        "label": "Build Innie Scheduler (GCC)",
+        "command": "gcc",
+        "args": [
+            "-Wall",
+            "-Wextra",
+            "-g",
+            "${workspaceFolder}/src/*.c",       
+            "-o",
+            "${workspaceFolder}/build/innie-scheduler.exe",
+            "-pthread"
+        ],
+        "group": {
+            "kind": "build",
+            "isDefault": true
+        },
+        "problemMatcher": ["$gcc"],
+        "options": {
+            "cwd": "${workspaceFolder}"
+        }
+        }
+    ]
+}
