@@ -5,6 +5,9 @@
 
 void execute_instruction(Innie *innie, Instruction *instr) {
     switch(instr->type) {
+        case INST_LOAD:
+            innie->work_value = instr->args[0];
+            break;
         case INST_ADD:
             // For now, assume args[0] is raw integer
             innie->work_value += instr->args[0];
