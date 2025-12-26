@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "../include/shift_stack.h"
+#include "shift_stack.h"
 
 ShiftStack *shift_stack_create(void) {
     ShiftStack *s = malloc(sizeof(ShiftStack));

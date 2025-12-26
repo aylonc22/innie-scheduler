@@ -1,9 +1,7 @@
 #include "innie.h"
-#include "../include/registery.h"
-#include "../include/instruction.h"
+#include "registery.h"
+#include "instruction.h"
 #include <stdio.h>
-
-Registry registry;
 
 void execute_instruction(Innie *innie, Instruction *instr) {
     switch(instr->type) {

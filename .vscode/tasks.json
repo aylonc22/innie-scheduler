@@ -9,7 +9,10 @@
                 "-Wall",
                 "-Wextra",
                 "-g",
+                "-I${workspaceFolder}/include",
+                "-I${workspaceFolder}/vendor/cjson",
                 "${workspaceFolder}/src/*.c",
+                "${workspaceFolder}/vendor/cjson/cJSON.c",
                 "-o",
                 "${workspaceFolder}/build/innie-scheduler.exe",
                 "-pthread"

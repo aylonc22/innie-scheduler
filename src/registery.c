@@ -1,4 +1,4 @@
-#include "../include/registery.h"
+#include "registery.h"
 
 void registry_init(Registry *r) {
     for (int i = 0; i < MAX_INNIES; i++) {

@@ -5,6 +5,7 @@
             "includePath": [
                 "${workspaceFolder}/include",
                 "${workspaceFolder}/src",
+                "${workspaceFolder}/vendor/cjson",
                 "C:/msys64/mingw64/include"
             ],
             "defines": [],
