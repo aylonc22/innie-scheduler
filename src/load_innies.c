@@ -6,7 +6,7 @@
 #include "instruction.h"
 #include "shift_stack.h"
 
-void load_innies_from_json(const char *filename, Innie **out_innies, int *out_count) {
+void load_innies_from_json(const char *filename, Innie **out_innies, int *out_count){
     FILE *f = fopen(filename, "r");
     if (!f) { perror("fopen"); exit(1); }
 
@@ -20,13 +20,16 @@ void load_innies_from_json(const char *filename, Innie **out_innies, int *out_co
     fclose(f);
 
     cJSON *root = cJSON_Parse(data);
-    if (!root) { fprintf(stderr, "JSON parse error\n"); exit(1); }
+    if (!root) {
+        fprintf(stderr, "JSON parse error\n");
+        exit(1);
+    }
 
     cJSON *innies_json = cJSON_GetObjectItem(root, "innies");
     int n = cJSON_GetArraySize(innies_json);
 
-    Innie *innies = malloc(sizeof(Innie) * n);
-    
+    Innie *innies = calloc(n, sizeof(Innie));
+
     for (int i = 0; i < n; i++) {
         cJSON *item = cJSON_GetArrayItem(innies_json, i);
 
@@ -40,12 +43,13 @@ void load_innies_from_json(const char *filename, Innie **out_innies, int *out_co
 
         innies[i].id = i;
         snprintf(innies[i].name, sizeof innies[i].name, "%s", id->valuestring);
+
         innies[i].pc = 0;
         innies[i].work_value = 0;
         innies[i].shifts = shift_stack_create();
+        innies[i].waffled = 0;
 
-        // TODO
-        innies[i].instructions = parse_schedule(schedule->valuestring, &innies[i].instructions_count);
+        innies[i].schedule_src = strdup(schedule->valuestring);
     }
 
     free(data);
@@ -54,6 +58,3 @@ void load_innies_from_json(const char *filename, Innie **out_innies, int *out_co
     *out_innies = innies;
     *out_count = n;
 }
-
-
-

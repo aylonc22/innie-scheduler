@@ -9,17 +9,19 @@
 typedef struct ShiftStack ShiftStack;
 
 typedef struct Innie{
-    char id;
     pthread_t thread;
+    int id;
+    char name[32];
+    int pc;
+    int work_value;
+    int waffled; // 0 false 1 true
 
-    int pc;             
-    int work_value;     
+    char *schedule_src;
 
-    char name[INNIE_NAME_MAX];
-
-    ShiftStack *shifts;
     Instruction *instructions;
     int instructions_count;
+
+    ShiftStack *shifts;
 } Innie;
 
 void *innie_worker(void *arg);

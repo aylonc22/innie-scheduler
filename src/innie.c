@@ -10,10 +10,11 @@ void *innie_worker(void *arg) {
 
     printf("Innie %s starting\n", innie->name);
 
-    // Loop through instructions
-    for (int pc = 0; pc < innie->instructions_count; pc++) {
-        Instruction *instr = &innie->instructions[pc];
+    innie->pc = 0;
+    while (innie->pc < innie->instructions_count) {
+        Instruction *instr = &innie->instructions[innie->pc];
         execute_instruction(innie, instr);
+        innie->pc++;
     }
 
     printf("Innie %s finished with work_value = %d\n",
@@ -21,3 +22,4 @@ void *innie_worker(void *arg) {
 
     return NULL;
 }
+

@@ -1,11 +1,15 @@
 #include "instruction.h"
+#include "innie.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
-#define MAX_INSTRUCTIONS 64 
+#define MAX_INSTRUCTIONS 128
 
+// ------------------------------------------------------------
+// Instruction name → enum
+// ------------------------------------------------------------
 static InstructionType get_instruction_type(const char *word) {
     if (strcmp(word, "LOAD") == 0) return INST_LOAD;
     if (strcmp(word, "ADD") == 0) return INST_ADD;
@@ -16,58 +20,182 @@ static InstructionType get_instruction_type(const char *word) {
     if (strcmp(word, "ANY_OF") == 0) return INST_ANY_OF;
     if (strcmp(word, "ALL_OF") == 0) return INST_ALL_OF;
     if (strcmp(word, "WELLNESS_CHECK") == 0) return INST_WELLNESS_CHECK;
-    return -1;
+    return INST_INVALID;
 }
 
-Instruction* parse_schedule(const char *schedule_str, int *out_count) {
-    Instruction *instructions = malloc(sizeof(Instruction) * MAX_INSTRUCTIONS);
+// ------------------------------------------------------------
+// Trim whitespace
+// ------------------------------------------------------------
+static char *trim(char *str) {
+    while (isspace(*str)) str++;
+    char *end = str + strlen(str) - 1;
+    while (end > str && isspace(*end)) *end-- = '\0';
+    return str;
+}
+
+// ------------------------------------------------------------
+// Resolve innie name → pointer
+// ------------------------------------------------------------
+static Innie *find_innie(
+    const char *name,
+    Innie *innies,
+    int innie_count
+) {
+    for (int i = 0; i < innie_count; i++) {
+        if (strcmp(innies[i].name, name) == 0)
+            return &innies[i];
+    }
+    return NULL;
+}
+
+// ------------------------------------------------------------
+// Parse "[HELLY, MARK]"
+// ------------------------------------------------------------
+static void parse_innie_list(
+    const char *text,
+    Arg *arg,
+    Innie *innies,
+    int innie_count
+) {
+    arg->type = ARG_LIST;
+    arg->list.count = 0;
+    arg->list.innies = malloc(sizeof(Innie *) * innie_count);
+
+    const char *p = text + 1; // skip '['
+    char buf[64];
+    int idx = 0;
+
+    while (*p && *p != ']') {
+        if (*p == ',' || isspace(*p)) {
+            if (idx > 0) {
+                buf[idx] = '\0';
+                Innie *i = find_innie(buf, innies, innie_count);
+                if (!i) {
+                    fprintf(stderr, "Unknown innie: %s\n", buf);
+                    exit(1);
+                }
+                arg->list.innies[arg->list.count++] = i;
+                idx = 0;
+            }
+            p++;
+            continue;
+        }
+        buf[idx++] = *p++;
+    }
+
+    if (idx > 0) {
+        buf[idx] = '\0';
+        Innie *i = find_innie(buf, innies, innie_count);
+        if (!i) {
+            fprintf(stderr, "Unknown innie: %s\n", buf);
+            exit(1);
+        }
+        arg->list.innies[arg->list.count++] = i;
+    }
+}
+
+// ------------------------------------------------------------
+// Parse schedule
+// ------------------------------------------------------------
+Instruction *parse_schedule(
+    const char *schedule_str,
+    int *out_count,
+    Innie *innies,
+    int innie_count
+) {
+    Instruction *instructions =
+        malloc(sizeof(Instruction) * MAX_INSTRUCTIONS);
     int count = 0;
 
-    char *sched_copy = strdup(schedule_str);
-    char *line = strtok(sched_copy, "\n");
+    char *copy = strdup(schedule_str);
+    char *line = strtok(copy, "\n");
 
     while (line) {
-        // skip empty lines
-        while (isspace(*line)) line++;
+        line = trim(line);
         if (*line == '\0') {
             line = strtok(NULL, "\n");
             continue;
         }
 
         char instr_name[32];
-        int args[4] = {0};
-        int arg_count = 0;
-
-        // try to parse first word and optional arguments
-        int scanned = sscanf(line, "%31s %d %d %d %d", instr_name, &args[0], &args[1], &args[2], &args[3]);
-        if (scanned < 1) {
-            fprintf(stderr, "Failed to parse line: %s\n", line);
-            exit(1);
-        }
+        sscanf(line, "%31s", instr_name);
 
         InstructionType type = get_instruction_type(instr_name);
-        if (type == -1) {
+        if (type == INST_INVALID) {
             fprintf(stderr, "Unknown instruction: %s\n", instr_name);
             exit(1);
         }
 
-        if (type == INST_LOAD || type == INST_ADD || type == INST_MULTIPLY) {
-            arg_count = 1; // for now, assume only one integer arg
-        } else {
-            arg_count = 0; // no args
+        Instruction instr = {0};
+        instr.type = type;
+
+        char *args_str = trim(line + strlen(instr_name));
+
+        switch (type) {
+
+        case INST_LOAD:
+        case INST_ADD:
+        case INST_MULTIPLY:
+
+            // list
+            if (args_str[0] == '[') {
+                parse_innie_list(args_str, &instr.args[0], innies, innie_count);
+                instr.arg_count = 1;
+            }
+            // integer
+            else if (isdigit(*args_str) || *args_str == '-') {
+                instr.args[0].type = ARG_INT;
+                if (sscanf(args_str, "%d",
+                        &instr.args[0].int_value) != 1) {
+                    fprintf(stderr, "Invalid number: %s\n", line);
+                    exit(1);
+                }
+                instr.arg_count = 1;
+            }
+            // single innie
+            else {
+                Innie *i = find_innie(args_str, innies, innie_count);
+                if (!i) {
+                    fprintf(stderr, "Unknown innie: %s\n", args_str);
+                    exit(1);
+                }
+                instr.args[0].type = ARG_INNIE;
+                instr.args[0].innie = i;
+                instr.arg_count = 1;
+            }
+            break;
+
+        case INST_SHIFT: {
+            int times;
+            if (sscanf(args_str, "%d TIMES", &times) != 1) {
+                fprintf(stderr, "Invalid SHIFT: %s\n", line);
+                exit(1);
+            }
+            instr.args[0].type = ARG_INT;
+            instr.args[0].int_value = times;
+            instr.arg_count = 1;
+            break;
         }
 
-        // store instruction
-        instructions[count].type = type;
-        instructions[count].arg_count = arg_count;
-        for (int i = 0; i < arg_count; i++)
-            instructions[count].args[i] = args[i];
+        case INST_WAFFLE:
+        case INST_END_SHIFT:
+            instr.arg_count = 0;
+            break;
 
-        count++;
+        default:
+            break;
+        }
+
+        instructions[count++] = instr;
+        if (count >= MAX_INSTRUCTIONS) {
+            fprintf(stderr, "Too many instructions\n");
+            exit(1);
+        }
+
         line = strtok(NULL, "\n");
     }
 
-    free(sched_copy);
+    free(copy);
     *out_count = count;
     return instructions;
 }
