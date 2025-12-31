@@ -8,13 +8,20 @@
 
 typedef struct ShiftStack ShiftStack;
 
+typedef enum {
+    INNIE_RUNNING,
+    INNIE_WAITING,
+    INNIE_FINISHED,
+    INNIE_DEADLOCKED
+} InnieState;
+
 typedef struct Innie{
     pthread_t thread;
     int id;
     char name[32];
     int pc;
     int work_value;
-    int waffled; // 0 false 1 true
+    InnieState state;
 
     char *schedule_src;
 
@@ -22,6 +29,9 @@ typedef struct Innie{
     int instructions_count;
 
     ShiftStack *shifts;
+
+    struct Innie **waiting_for;
+    int waiting_count;
 } Innie;
 
 void *innie_worker(void *arg);

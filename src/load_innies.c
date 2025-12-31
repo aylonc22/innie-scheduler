@@ -47,7 +47,7 @@ void load_innies_from_json(const char *filename, Innie **out_innies, int *out_co
         innies[i].pc = 0;
         innies[i].work_value = 0;
         innies[i].shifts = shift_stack_create();
-        innies[i].waffled = 0;
+        innies[i].state = INNIE_RUNNING;
 
         innies[i].schedule_src = strdup(schedule->valuestring);
     }
