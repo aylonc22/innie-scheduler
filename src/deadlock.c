@@ -39,6 +39,7 @@ void detect_deadlocks(Innie *innies, int count) {
             for (int j = 0; j < count; j++) {
                 if (rec_stack[j] && innies[j].state == INNIE_WAITING) {
                     innies[j].state = INNIE_DEADLOCKED;
+                    innies[j].work_value = -1;
                     printf("[DEADLOCK] %s terminated due to circular dependency\n", innies[j].name);
                 }
             }
