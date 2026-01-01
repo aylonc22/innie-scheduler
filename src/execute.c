@@ -154,6 +154,81 @@ ExecResult execute_instruction(Innie *innie, Instruction *instr) {
                 innie->state = INNIE_WAITING;
                 return EXEC_BLOCKED;
             }
+            break;
+        }
+        case INST_CONDITIONAL_ADD: {
+            if (!instr->cond) {
+                fprintf(stderr, "[%s] CONDITIONAL_ADD missing condition\n",
+                        innie->name);
+                return EXEC_OK;
+            }
+
+            Arg *add_list = &instr->args[0];
+            Condition *cond = instr->cond;
+
+            innie->waiting_count = 0;
+
+            /* ---------- dependency collection ---------- */
+
+            // ADD list dependencies
+            if (add_list->type == ARG_LIST) {
+                for (int i = 0; i < add_list->list.count; i++) {
+                    Innie *dep = add_list->list.innies[i];
+                    if (dep->state != INNIE_FINISHED) {
+                        innie->waiting_for[innie->waiting_count++] = dep;
+                    }
+                }
+            }
+
+            // LHS dependency
+            if (cond->lhs.type == ARG_INNIE &&
+                cond->lhs.innie->state != INNIE_FINISHED) {
+                innie->waiting_for[innie->waiting_count++] = cond->lhs.innie;
+            }
+
+            // RHS dependencies
+            if (cond->rhs.type == ARG_LIST) {
+                for (int i = 0; i < cond->rhs.list.count; i++) {
+                    Innie *dep = cond->rhs.list.innies[i];
+                    if (dep->state != INNIE_FINISHED) {
+                        innie->waiting_for[innie->waiting_count++] = dep;
+                    }
+                }
+            } else if (cond->rhs.type == ARG_INNIE &&
+                    cond->rhs.innie->state != INNIE_FINISHED) {
+                innie->waiting_for[innie->waiting_count++] = cond->rhs.innie;
+            }
+
+            if (innie->waiting_count > 0) {
+                innie->state = INNIE_WAITING;
+                return EXEC_BLOCKED;
+            }
+
+            /* ---------- evaluate condition ---------- */
+
+            int lhs_value = resolve_arg_value(innie, &cond->lhs);
+            int rhs_value = resolve_arg_value(innie, &cond->rhs);
+
+            bool condition_met = false;
+
+            switch (cond->type) {
+                case COND_GT: condition_met = lhs_value > rhs_value; break;
+                case COND_LT: condition_met = lhs_value < rhs_value; break;
+                case COND_EQ: condition_met = lhs_value == rhs_value; break;
+            }
+
+            if (condition_met) {
+                int add_value = resolve_arg_value(innie, add_list);
+                printf("[%s] CONDITIONAL_ADD → %d\n",
+                        innie->name, add_value);
+                innie->work_value += add_value;
+            } else {
+                printf("[%s] CONDITIONAL_ADD skipped\n", innie->name);
+            }
+
+            innie->state = INNIE_RUNNING;
+            innie->waiting_count = 0;
+            return EXEC_OK;
         }
 
         default:
