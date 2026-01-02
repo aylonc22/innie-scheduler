@@ -13,6 +13,7 @@
 static InstructionType get_instruction_type(const char *word) {
     if (strcmp(word, "LOAD") == 0) return INST_LOAD;
     if (strcmp(word, "ADD") == 0) return INST_ADD;
+    if (strcmp(word, "MODULO") == 0) return INST_MODULO;
     if (strcmp(word, "MULTIPLY") == 0) return INST_MULTIPLY;
     if (strcmp(word, "WAFFLE") == 0) return INST_WAFFLE;
     if (strcmp(word, "SHIFT") == 0) return INST_SHIFT;
@@ -182,6 +183,7 @@ Instruction *parse_schedule(
 
         case INST_LOAD:
         case INST_ADD:
+        case INST_MODULO:
         case INST_MULTIPLY:
             if (args_str[0] == '[') {
                 parse_innie_list(args_str, &instr.args[0], innies, innie_count);

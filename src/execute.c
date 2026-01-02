@@ -126,14 +126,32 @@ ExecResult execute_instruction(Innie *innie, Instruction *instr) {
     }
 
     case INST_ADD:
+    case INST_MODULO:
     case INST_MULTIPLY: {
         int value = resolve_arg_value(innie, &instr->args[0]);
-        if (instr->type == INST_ADD) {
-            printf("[%s] ADD %d\n", innie->name, value);
-            innie->work_value += value;
-        } else {
-            printf("[%s] MULTIPLY %d\n", innie->name, value);
-            innie->work_value *= value;
+        switch (instr->type) {
+            case INST_ADD:
+                printf("[%s] ADD %d\n", innie->name, value);
+                innie->work_value += value;
+                break;
+
+            case INST_MULTIPLY:
+                printf("[%s] MULTIPLY %d\n", innie->name, value);
+                innie->work_value *= value;
+                break;
+
+            case INST_MODULO:
+                if (value == 0) {
+                    fprintf(stderr, "[%s] MODULO by zero, skipping\n", innie->name);
+                } else {
+                    printf("[%s] MODULO %d\n", innie->name, value);
+                    innie->work_value %= value;
+                }
+                break;
+
+            default:
+                fprintf(stderr, "[%s] Unknown arithmetic instruction %d\n", innie->name, instr->type);
+                break;
         }
         innie->state = INNIE_RUNNING;
         return EXEC_OK;

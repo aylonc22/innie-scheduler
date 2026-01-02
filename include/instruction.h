@@ -11,6 +11,7 @@ typedef struct Innie Innie;
 typedef enum {
     INST_LOAD,
     INST_ADD,
+    INST_MODULO,
     INST_MULTIPLY,
     INST_WAFFLE,
     INST_SHIFT,
