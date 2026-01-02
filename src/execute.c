@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sched.h>
+#include <stdbool.h>
+
 #include "innie.h"
 #include "registery.h"
 #include "instruction.h"
@@ -8,231 +9,189 @@
 #include "execute.h"
 
 /* ---------------- ARG RESOLUTION ---------------- */
-
 static int resolve_arg_value(Innie *self, Arg *arg) {
     (void) self;
-    switch (arg->type) {
 
+    switch (arg->type) {
         case ARG_INT:
             return arg->int_value;
-
         case ARG_INNIE:
             return arg->innie->work_value;
-
         case ARG_LIST: {
             int sum = 0;
-            for (int i = 0; i < arg->list.count; i++) {
+            for (int i = 0; i < arg->list.count; i++)
                 sum += arg->list.innies[i]->work_value;
-            }
             return sum;
         }
-
         default:
-            fprintf(stderr, "Invalid argument type\n");
+            fprintf(stderr, "[%s] Invalid argument type\n", self->name);
             return 0;
     }
 }
 
-/* ---------------- EXECUTION ---------------- */
-
-ExecResult execute_instruction(Innie *innie, Instruction *instr) {
-
-    switch (instr->type) {
-
-        case INST_LOAD: {
-            int value = resolve_arg_value(innie, &instr->args[0]);
-            printf("[%s] LOAD %d\n", innie->name, value);
-            innie->work_value = value;
-            innie->state = INNIE_RUNNING;
-            innie->waiting_count = 0; // no dependencies
-            return EXEC_OK;
-        }
-
-        case INST_ADD:
-        case INST_MULTIPLY: {
-            // Reset waiting list
-            innie->waiting_count = 0;
-
-            if (instr->args[0].type == ARG_LIST) {
-                for (int i = 0; i < instr->args[0].list.count; i++) {
-                    Innie *dep = instr->args[0].list.innies[i];
-                    if (dep->state != INNIE_FINISHED) {
-                        innie->waiting_for[innie->waiting_count++] = dep;
-                    }
-                }
-                if (innie->waiting_count > 0) {
-                    innie->state = INNIE_WAITING;
-                    return EXEC_BLOCKED;
-                }
-            }
-
-            int value = resolve_arg_value(innie, &instr->args[0]);
-            if (instr->type == INST_ADD) {
-                printf("[%s] ADD %d\n", innie->name, value);
-                innie->work_value += value;
-            } else {
-                printf("[%s] MULTIPLY %d\n", innie->name, value);
-                innie->work_value *= value;
-            }
-            innie->state = INNIE_RUNNING;
-            return EXEC_OK;
-        }
-
-        case INST_WAFFLE:
-            printf("[%s] WAFFLE → %d\n", innie->name, innie->work_value);
-            registry_set(&registry, innie->id, innie->work_value);
-            innie->state = INNIE_FINISHED;
-            innie->waiting_count = 0; // done waiting
-            return EXEC_TERMINATE;
-
-        case INST_SHIFT: {
-            if (instr->args[0].type != ARG_INT) {
-                fprintf(stderr, "[%s] SHIFT expects integer\n", innie->name);
-                return EXEC_OK;
-            }
-            int times = instr->args[0].int_value;
-            printf("[%s] SHIFT %d TIMES\n", innie->name, times);
-            if (times > 0) {
-                shift_stack_push(innie->shifts, innie->pc + 1, times);
-            }
-            innie->state = INNIE_RUNNING;
-            return EXEC_OK;
-        }
-
-        case INST_END_SHIFT: {
-            ShiftFrame *frame = shift_stack_peek(innie->shifts);
-            if (!frame) {
-                fprintf(stderr, "[%s] END_SHIFT without SHIFT\n", innie->name);
-                return EXEC_OK;
-            }
-            frame->remaining--;
-            if (frame->remaining > 0) {
-                innie->pc = frame->start_pc - 1;
-            } else {
-                shift_stack_pop(innie->shifts);
-            }
-            innie->state = INNIE_RUNNING;
-            return EXEC_OK;
-        }
-
-        case INST_ANY_OF:
-        case INST_ALL_OF: {
-            Arg *list_arg = &instr->args[0];
-            innie->waiting_count = 0;
-
-            if (list_arg->type != ARG_LIST) {
-                fprintf(stderr, "[%s] %s expects a list argument\n",
-                        innie->name,
-                        instr->type == INST_ANY_OF ? "ANY_OF" : "ALL_OF");
-                return EXEC_OK;
-            }
-
-            int ready_count = 0;
-            for (int i = 0; i < list_arg->list.count; i++) {
-                Innie *dep = list_arg->list.innies[i];
-                if (dep->state == INNIE_FINISHED) {
-                    ready_count++;
-                } else {
-                    innie->waiting_for[innie->waiting_count++] = dep;
-                }
-            }
-
-            int satisfied = (instr->type == INST_ANY_OF && ready_count > 0) ||
-                            (instr->type == INST_ALL_OF && ready_count == list_arg->list.count);
-
-            if (satisfied) {
-                int value = resolve_arg_value(innie, list_arg);
-                printf("[%s] %s → %d\n",
-                        innie->name,
-                        instr->type == INST_ANY_OF ? "ANY_OF" : "ALL_OF",
-                        value);
-                innie->work_value += value;
-                innie->state = INNIE_RUNNING;
-                innie->waiting_count = 0;
-                return EXEC_OK;
-            } else {
-                innie->state = INNIE_WAITING;
-                return EXEC_BLOCKED;
+/* ---------------- CONDITION EVALUATION ---------------- */
+static bool eval_condition(int lhs, ConditionType type, Arg *rhs, bool any_of) {
+    switch (rhs->type) {
+        case ARG_INT: {
+            int r = rhs->int_value;
+            switch (type) {
+                case COND_GT: return lhs > r;
+                case COND_LT: return lhs < r;
+                case COND_EQ: return lhs == r;
             }
             break;
         }
-        case INST_CONDITIONAL_ADD: {
-            if (!instr->cond) {
-                fprintf(stderr, "[%s] CONDITIONAL_ADD missing condition\n",
-                        innie->name);
-                return EXEC_OK;
+        case ARG_INNIE: {
+            int r = rhs->innie->work_value;
+            switch (type) {
+                case COND_GT: return lhs > r;
+                case COND_LT: return lhs < r;
+                case COND_EQ: return lhs == r;
             }
-
-            Arg *add_list = &instr->args[0];
-            Condition *cond = instr->cond;
-
-            innie->waiting_count = 0;
-
-            /* ---------- dependency collection ---------- */
-
-            // ADD list dependencies
-            if (add_list->type == ARG_LIST) {
-                for (int i = 0; i < add_list->list.count; i++) {
-                    Innie *dep = add_list->list.innies[i];
-                    if (dep->state != INNIE_FINISHED) {
-                        innie->waiting_for[innie->waiting_count++] = dep;
-                    }
+            break;
+        }
+        case ARG_LIST: {
+            int satisfied = 0;
+            for (int i = 0; i < rhs->list.count; i++) {
+                int r = rhs->list.innies[i]->work_value;
+                bool ok = false;
+                switch (type) {
+                    case COND_GT: ok = lhs > r; break;
+                    case COND_LT: ok = lhs < r; break;
+                    case COND_EQ: ok = lhs == r; break;
                 }
+                if (ok) satisfied++;
             }
+            if (any_of) return satisfied > 0;
+            else return satisfied == rhs->list.count;
+        }
+        default: return false;
+    }
+    return false;
+}
 
-            // LHS dependency
-            if (cond->lhs.type == ARG_INNIE &&
-                cond->lhs.innie->state != INNIE_FINISHED) {
-                innie->waiting_for[innie->waiting_count++] = cond->lhs.innie;
+/* ---------------- EXECUTION ---------------- */
+ExecResult execute_instruction(Innie *innie, Instruction *instr) {
+    innie->waiting_count = 0; // reset each instruction
+
+    /* Helper: check dependencies */
+    for (int i = 0; i < instr->arg_count; i++) {
+        Arg *arg = &instr->args[i];
+        if (arg->type == ARG_INNIE && arg->innie->state != INNIE_FINISHED)
+            innie->waiting_for[innie->waiting_count++] = arg->innie;
+        else if (arg->type == ARG_LIST) {
+            for (int j = 0; j < arg->list.count; j++) {
+                if (arg->list.innies[j]->state != INNIE_FINISHED)
+                    innie->waiting_for[innie->waiting_count++] = arg->list.innies[j];
             }
+        }
+    }
 
-            // RHS dependencies
-            if (cond->rhs.type == ARG_LIST) {
-                for (int i = 0; i < cond->rhs.list.count; i++) {
-                    Innie *dep = cond->rhs.list.innies[i];
-                    if (dep->state != INNIE_FINISHED) {
-                        innie->waiting_for[innie->waiting_count++] = dep;
-                    }
-                }
-            } else if (cond->rhs.type == ARG_INNIE &&
-                    cond->rhs.innie->state != INNIE_FINISHED) {
-                innie->waiting_for[innie->waiting_count++] = cond->rhs.innie;
-            }
+    if (instr->cond) {
+        Arg *lhs_arg = &instr->cond->lhs;
+        Arg *rhs_arg = &instr->cond->rhs;
 
-            if (innie->waiting_count > 0) {
-                innie->state = INNIE_WAITING;
-                return EXEC_BLOCKED;
-            }
-
-            /* ---------- evaluate condition ---------- */
-
-            int lhs_value = resolve_arg_value(innie, &cond->lhs);
-            int rhs_value = resolve_arg_value(innie, &cond->rhs);
-
-            bool condition_met = false;
-
-            switch (cond->type) {
-                case COND_GT: condition_met = lhs_value > rhs_value; break;
-                case COND_LT: condition_met = lhs_value < rhs_value; break;
-                case COND_EQ: condition_met = lhs_value == rhs_value; break;
-            }
-
-            if (condition_met) {
-                int add_value = resolve_arg_value(innie, add_list);
-                printf("[%s] CONDITIONAL_ADD → %d\n",
-                        innie->name, add_value);
-                innie->work_value += add_value;
-            } else {
-                printf("[%s] CONDITIONAL_ADD skipped\n", innie->name);
-            }
-
-            innie->state = INNIE_RUNNING;
-            innie->waiting_count = 0;
-            return EXEC_OK;
+        // LHS dependencies
+        if (lhs_arg->type == ARG_INNIE && lhs_arg->innie->state != INNIE_FINISHED)
+            innie->waiting_for[innie->waiting_count++] = lhs_arg->innie;
+        if (lhs_arg->type == ARG_LIST) {
+            for (int i = 0; i < lhs_arg->list.count; i++)
+                if (lhs_arg->list.innies[i]->state != INNIE_FINISHED)
+                    innie->waiting_for[innie->waiting_count++] = lhs_arg->list.innies[i];
         }
 
-        default:
-            fprintf(stderr, "[%s] Unknown instruction %d\n", innie->name, instr->type);
+        // RHS dependencies
+        if (rhs_arg->type == ARG_INNIE && rhs_arg->innie->state != INNIE_FINISHED)
+            innie->waiting_for[innie->waiting_count++] = rhs_arg->innie;
+        if (rhs_arg->type == ARG_LIST) {
+            for (int i = 0; i < rhs_arg->list.count; i++)
+                if (rhs_arg->list.innies[i]->state != INNIE_FINISHED)
+                    innie->waiting_for[innie->waiting_count++] = rhs_arg->list.innies[i];
+        }
+    }
+
+    if (innie->waiting_count > 0) {
+        innie->state = INNIE_WAITING;
+        return EXEC_BLOCKED;
+    }
+
+    switch (instr->type) {
+
+    case INST_LOAD: {
+        int value = resolve_arg_value(innie, &instr->args[0]);
+        printf("[%s] LOAD %d\n", innie->name, value);
+        innie->work_value = value;
+        innie->state = INNIE_RUNNING;
+        return EXEC_OK;
+    }
+
+    case INST_ADD:
+    case INST_MULTIPLY: {
+        int value = resolve_arg_value(innie, &instr->args[0]);
+        if (instr->type == INST_ADD) {
+            printf("[%s] ADD %d\n", innie->name, value);
+            innie->work_value += value;
+        } else {
+            printf("[%s] MULTIPLY %d\n", innie->name, value);
+            innie->work_value *= value;
+        }
+        innie->state = INNIE_RUNNING;
+        return EXEC_OK;
+    }
+
+    case INST_WAFFLE:
+        printf("[%s] WAFFLE → %d\n", innie->name, innie->work_value);
+        registry_set(&registry, innie->id, innie->work_value);
+        innie->state = INNIE_FINISHED;
+        return EXEC_TERMINATE;
+
+    case INST_SHIFT: {
+        int times = instr->args[0].int_value;
+        printf("[%s] SHIFT %d TIMES\n", innie->name, times);
+        if (times > 0)
+            shift_stack_push(innie->shifts, innie->pc + 1, times);
+        return EXEC_OK;
+    }
+
+    case INST_END_SHIFT: {
+        ShiftFrame *frame = shift_stack_peek(innie->shifts);
+        if (!frame) {
+            fprintf(stderr, "[%s] END_SHIFT without SHIFT\n", innie->name);
             return EXEC_OK;
+        }
+        frame->remaining--;
+        if (frame->remaining > 0)
+            innie->pc = frame->start_pc - 1;
+        else
+            shift_stack_pop(innie->shifts);
+        return EXEC_OK;
+    }
+
+    case INST_WELLNESS_CHECK: {
+        int lhs = resolve_arg_value(innie, &instr->cond->lhs);
+        bool any_of = instr->cond->rhs.type == ARG_LIST && instr->cond->rhs.list.count > 1;
+        bool ok = eval_condition(lhs, instr->cond->type, &instr->cond->rhs, any_of);
+        printf("[%s] WELLNESS_CHECK %s\n", innie->name, ok ? "PASSED" : "FAILED");
+        return EXEC_OK;
+    }
+
+    case INST_CONDITIONAL_ADD: {
+        int lhs = resolve_arg_value(innie, &instr->cond->lhs);
+        bool any_of = instr->cond->rhs.type == ARG_LIST && instr->cond->rhs.list.count > 1;
+        bool condition_met = eval_condition(lhs, instr->cond->type, &instr->cond->rhs, any_of);
+
+        if (condition_met) {
+            int add = resolve_arg_value(innie, &instr->args[0]);
+            printf("[%s] CONDITIONAL_ADD → %d\n", innie->name, add);
+            innie->work_value += add;
+        } else {
+            printf("[%s] CONDITIONAL_ADD skipped\n", innie->name);
+        }
+        return EXEC_OK;
+    }
+
+    default:
+        fprintf(stderr, "[%s] Unknown instruction %d\n", innie->name, instr->type);
+        return EXEC_OK;
     }
 }

@@ -17,8 +17,6 @@ static InstructionType get_instruction_type(const char *word) {
     if (strcmp(word, "WAFFLE") == 0) return INST_WAFFLE;
     if (strcmp(word, "SHIFT") == 0) return INST_SHIFT;
     if (strcmp(word, "END_SHIFT") == 0) return INST_END_SHIFT;
-    if (strcmp(word, "ANY_OF") == 0) return INST_ANY_OF;
-    if (strcmp(word, "ALL_OF") == 0) return INST_ALL_OF;
     if (strcmp(word, "WELLNESS_CHECK") == 0) return INST_WELLNESS_CHECK;
     if (strcmp(word, "CONDITIONAL_ADD") == 0) return INST_CONDITIONAL_ADD;
     return INST_INVALID;
@@ -92,6 +90,57 @@ static void parse_innie_list(
 }
 
 /* ------------------------------------------------------------ */
+/* Parse condition (shared logic) */
+/* ------------------------------------------------------------ */
+static void parse_condition(
+    char *text,
+    Condition *cond,
+    Innie *innies,
+    int innie_count
+) {
+    char lhs[32], op[4];
+    sscanf(text, "%31s %3s", lhs, op);
+
+    Innie *lhs_i = find_innie(lhs, innies, innie_count);
+    if (!lhs_i) {
+        fprintf(stderr, "Unknown LHS innie: %s\n", lhs);
+        exit(1);
+    }
+
+    cond->lhs.type = ARG_INNIE;
+    cond->lhs.innie = lhs_i;
+
+    if (strcmp(op, ">") == 0) cond->type = COND_GT;
+    else if (strcmp(op, "<") == 0) cond->type = COND_LT;
+    else if (strcmp(op, "==") == 0) cond->type = COND_EQ;
+    else {
+        fprintf(stderr, "Invalid condition operator: %s\n", op);
+        exit(1);
+    }
+
+    char *rhs = strstr(text, op) + strlen(op);
+    rhs = trim(rhs);
+
+    if (strncmp(rhs, "ANY OF", 6) == 0 || strncmp(rhs, "ALL OF", 6) == 0) {
+        rhs = trim(rhs + 6);
+        parse_innie_list(rhs, &cond->rhs, innies, innie_count);
+    }
+    else if (isdigit(*rhs) || *rhs == '-') {
+        cond->rhs.type = ARG_INT;
+        cond->rhs.int_value = atoi(rhs);
+    }
+    else {
+        Innie *r = find_innie(rhs, innies, innie_count);
+        if (!r) {
+            fprintf(stderr, "Unknown RHS innie: %s\n", rhs);
+            exit(1);
+        }
+        cond->rhs.type = ARG_INNIE;
+        cond->rhs.innie = r;
+    }
+}
+
+/* ------------------------------------------------------------ */
 /* Parse schedule */
 /* ------------------------------------------------------------ */
 Instruction *parse_schedule(
@@ -125,26 +174,21 @@ Instruction *parse_schedule(
 
         Instruction instr = {0};
         instr.type = type;
+        instr.cond = NULL;
 
         char *args_str = trim(line + strlen(instr_name));
 
         switch (type) {
 
-        /* ---------------- SIMPLE ARITHMETIC ---------------- */
         case INST_LOAD:
         case INST_ADD:
         case INST_MULTIPLY:
-
             if (args_str[0] == '[') {
                 parse_innie_list(args_str, &instr.args[0], innies, innie_count);
-                instr.arg_count = 1;
-            }
-            else if (isdigit(*args_str) || *args_str == '-') {
+            } else if (isdigit(*args_str) || *args_str == '-') {
                 instr.args[0].type = ARG_INT;
-                sscanf(args_str, "%d", &instr.args[0].int_value);
-                instr.arg_count = 1;
-            }
-            else {
+                instr.args[0].int_value = atoi(args_str);
+            } else {
                 Innie *i = find_innie(args_str, innies, innie_count);
                 if (!i) {
                     fprintf(stderr, "Unknown innie: %s\n", args_str);
@@ -152,84 +196,41 @@ Instruction *parse_schedule(
                 }
                 instr.args[0].type = ARG_INNIE;
                 instr.args[0].innie = i;
-                instr.arg_count = 1;
             }
+            instr.arg_count = 1;
             break;
 
-        /* ---------------- SHIFT ---------------- */
         case INST_SHIFT: {
             int times;
-            if (sscanf(args_str, "%d TIMES", &times) != 1) {
-                fprintf(stderr, "Invalid SHIFT: %s\n", line);
-                exit(1);
-            }
+            sscanf(args_str, "%d TIMES", &times);
             instr.args[0].type = ARG_INT;
             instr.args[0].int_value = times;
             instr.arg_count = 1;
             break;
         }
 
-        /* ---------------- CONDITIONAL_ADD ---------------- */
-        case INST_CONDITIONAL_ADD: {
-            // CONDITIONAL_ADD [X] IF A > ANY OF [B, C]
+        case INST_WELLNESS_CHECK:
+            instr.cond = malloc(sizeof(Condition));
+            parse_condition(args_str, instr.cond, innies, innie_count);
+            instr.arg_count = 0;
+            break;
 
+        case INST_CONDITIONAL_ADD: {
             char *if_pos = strstr(args_str, " IF ");
             if (!if_pos) {
-                fprintf(stderr, "Missing IF in CONDITIONAL_ADD: %s\n", line);
+                fprintf(stderr, "Missing IF in CONDITIONAL_ADD\n");
                 exit(1);
             }
 
             *if_pos = '\0';
-            char *add_part = trim(args_str);
-            char *cond_part = trim(if_pos + 4);
-
-            parse_innie_list(add_part, &instr.args[0], innies, innie_count);
+            parse_innie_list(trim(args_str), &instr.args[0], innies, innie_count);
             instr.arg_count = 1;
 
             instr.cond = malloc(sizeof(Condition));
-
-            char lhs[32], op[4];
-            sscanf(cond_part, "%31s %3s", lhs, op);
-
-            Innie *lhs_i = find_innie(lhs, innies, innie_count);
-            if (!lhs_i) {
-                fprintf(stderr, "Unknown innie in condition: %s\n", lhs);
-                exit(1);
-            }
-
-            instr.cond->lhs.type = ARG_INNIE;
-            instr.cond->lhs.innie = lhs_i;
-
-            if (strcmp(op, ">") == 0) instr.cond->type = COND_GT;
-            else if (strcmp(op, "<") == 0) instr.cond->type = COND_LT;
-            else if (strcmp(op, "==") == 0) instr.cond->type = COND_EQ;
-            else {
-                fprintf(stderr, "Invalid condition operator: %s\n", op);
-                exit(1);
-            }
-
-            char *rhs = strstr(cond_part, op) + strlen(op);
-            rhs = trim(rhs);
-
-            if (strncmp(rhs, "ANY OF", 6) == 0) {
-                rhs = trim(rhs + 6);
-                parse_innie_list(rhs, &instr.cond->rhs, innies, innie_count);
-            }else if (isdigit(*rhs) || *rhs == '-') {
-                    instr.cond->rhs.type = ARG_INT;
-                    instr.cond->rhs.int_value = atoi(rhs);
-            } else {
-                Innie *r = find_innie(rhs, innies, innie_count);
-                if (!r) {
-                    fprintf(stderr, "Unknown RHS innie: %s\n", rhs);
-                    exit(1);
-                }
-                instr.cond->rhs.type = ARG_INNIE;
-                instr.cond->rhs.innie = r;
-            }
+            parse_condition(trim(if_pos + 4), instr.cond, innies, innie_count);
             break;
         }
 
-        /* ---------------- NO-ARG ---------------- */
         case INST_WAFFLE:
         case INST_END_SHIFT:
             instr.arg_count = 0;
@@ -240,11 +241,6 @@ Instruction *parse_schedule(
         }
 
         instructions[count++] = instr;
-        if (count >= MAX_INSTRUCTIONS) {
-            fprintf(stderr, "Too many instructions\n");
-            exit(1);
-        }
-
         line = strtok(NULL, "\n");
     }
 
