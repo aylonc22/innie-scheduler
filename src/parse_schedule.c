@@ -102,14 +102,19 @@ static void parse_condition(
     char lhs[32], op[4];
     sscanf(text, "%31s %3s", lhs, op);
 
-    Innie *lhs_i = find_innie(lhs, innies, innie_count);
-    if (!lhs_i) {
-        fprintf(stderr, "Unknown LHS innie: %s\n", lhs);
-        exit(1);
+    /* ---------------- LHS can be an integer or an innie ---------------- */
+    if (isdigit(lhs[0]) || (lhs[0] == '-' && isdigit(lhs[1]))) {
+        cond->lhs.type = ARG_INT;
+        cond->lhs.int_value = atoi(lhs);
+    } else {
+        Innie *lhs_i = find_innie(lhs, innies, innie_count);
+        if (!lhs_i) {
+            fprintf(stderr, "Unknown LHS innie: %s\n", lhs);
+            exit(1);
+        }
+        cond->lhs.type = ARG_INNIE;
+        cond->lhs.innie = lhs_i;
     }
-
-    cond->lhs.type = ARG_INNIE;
-    cond->lhs.innie = lhs_i;
 
     if (strcmp(op, ">") == 0) cond->type = COND_GT;
     else if (strcmp(op, "<") == 0) cond->type = COND_LT;
@@ -129,8 +134,7 @@ static void parse_condition(
     else if (isdigit(*rhs) || *rhs == '-') {
         cond->rhs.type = ARG_INT;
         cond->rhs.int_value = atoi(rhs);
-    }
-    else {
+    } else {
         Innie *r = find_innie(rhs, innies, innie_count);
         if (!r) {
             fprintf(stderr, "Unknown RHS innie: %s\n", rhs);
